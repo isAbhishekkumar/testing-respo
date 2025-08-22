@@ -91,12 +91,9 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                 title = title,
                 album = Album(id = id, title = title),
                 artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                duration = 0L
-            ).apply {
-                if (thumbnail != null) {
-                    cover = thumbnail.toImageHolder()
-                }
-            }
+                duration = 0L,
+                cover = thumbnail?.toImageHolder()
+            )
             
             QuickSearchItem.Media(trackItem.toMediaItem(), false)
         }
@@ -118,7 +115,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     override suspend fun loadStreamableMedia(streamable: Streamable, isDownload: Boolean): Streamable.Media {
-        if (streamable !is Streamable.Track) return Streamable.Media.Server(emptyList(), false)
+        if (streamable !is dev.brahmkshatriya.echo.common.models.Streamable.Track) return Streamable.Media.Server(emptyList(), false)
         
         val kkey = requestVideoKey(streamable.track.id)
         val url = "$baseUrl/api/DramaList/Episode/${streamable.track.id}.png?err=false&ts=&time=&kkey=$kkey"
@@ -142,17 +139,14 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val thumbnail = item.jsonObject["thumbnail"]?.jsonPrimitive?.content
 
-            Track(
+            val trackItem = Track(
                 id = id,
                 title = title,
                 album = Album(id = id, title = title),
                 artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                duration = 0L
-            ).apply {
-                if (thumbnail != null) {
-                    cover = thumbnail.toImageHolder()
-                }
-            }
+                duration = 0L,
+                cover = thumbnail?.toImageHolder()
+            )
         } ?: emptyList()
 
         return listOf(
@@ -171,17 +165,14 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val thumbnail = item.jsonObject["thumbnail"]?.jsonPrimitive?.content
 
-            Track(
+            val trackItem = Track(
                 id = id,
                 title = title,
                 album = Album(id = id, title = title),
                 artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                duration = 0L
-            ).apply {
-                if (thumbnail != null) {
-                    cover = thumbnail.toImageHolder()
-                }
-            }
+                duration = 0L,
+                cover = thumbnail?.toImageHolder()
+            )
         }
 
         return listOf(
@@ -201,13 +192,9 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             title = jObject["title"]?.jsonPrimitive?.content ?: originalTrack.title,
             album = Album(
                 id = originalTrack.id,
-                title = jObject["title"]?.jsonPrimitive?.content ?: originalTrack.title
-            ).apply {
-                val thumbnail = jObject["thumbnail"]?.jsonPrimitive?.content
-                if (thumbnail != null) {
-                    cover = thumbnail.toImageHolder()
-                }
-            },
+                title = jObject["title"]?.jsonPrimitive?.content ?: originalTrack.title,
+                cover = jObject["thumbnail"]?.jsonPrimitive?.content?.toImageHolder()
+            ),
             description = jObject["description"]?.jsonPrimitive?.content
         )
     }
