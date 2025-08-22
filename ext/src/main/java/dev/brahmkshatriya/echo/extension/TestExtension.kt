@@ -43,7 +43,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         val response = client.newCall(request).execute()
         val jsonData = response.body?.string() ?: return@Single emptyList()
         
-        parsePopularAnimeJson(jsonData).shelves
+        parsePopularAnimeJson(jsonData)
     }
 
     override suspend fun getHomeTabs(): List<Tab> {
@@ -62,7 +62,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         val response = client.newCall(request).execute()
         val jsonData = response.body?.string() ?: return@Single emptyList()
         
-        parseSearchAnimeJson(jsonData).shelves
+        parseSearchAnimeJson(jsonData)
     }
 
     override suspend fun searchTabs(query: String): List<Tab> {
@@ -89,14 +89,22 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             val track = Track(
                 id = id,
                 title = title,
-                album = Album(id = id, title = title, cover = thumbnail?.let { ImageHolder(it.toRequest()) }),
+                album = Album(id = id, title = title),
                 artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                duration = 0L,
-                cover = thumbnail?.let { ImageHolder(it.toRequest()) }
-            )
+                duration = 0L
+            ).apply {
+                if (thumbnail != null) {
+                    cover = thumbnail.toRequest().toImageHolder()
+                }
+            }
             
             QuickSearchItem.Media(track.toMediaItem(), false)
         }
+    }
+
+    override suspend fun deleteQuickSearch(item: QuickSearchItem) {
+        // Implementation for deleting quick search items
+        // Can be empty if not needed
     }
 
     // Track Client Implementation
@@ -110,7 +118,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     override suspend fun loadStreamableMedia(streamable: Streamable, isDownload: Boolean): Streamable.Media {
-        if (streamable !is Streamable.Track) return Streamable.Media.Server("", "")
+        if (streamable !is Streamable.Track) return Streamable.Media.Server(emptyList(), false)
         
         val kkey = requestVideoKey(streamable.track.id)
         val url = "$baseUrl/api/DramaList/Episode/${streamable.track.id}.png?err=false&ts=&time=&kkey=$kkey"
@@ -120,27 +128,13 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         return videosFromElement(response, streamable.track.id)
     }
 
-    private suspend fun videosFromElement(response: Response, id: String): Streamable.Media {
-        val jsonData = response.body?.string() ?: return Streamable.Media.Server("", "")
-        val jObject = json.decodeFromString<JsonObject>(jsonData)
-        val videoUrl = jObject["Video"]?.jsonPrimitive?.content ?: return Streamable.Media.Server("", "")
-        
-        return Streamable.Media.Server(
-            url = videoUrl.toRequest(),
-            headers = mapOf(
-                "referer" to "$baseUrl/",
-                "origin" to baseUrl
-            )
-        )
-    }
-
     override fun getShelves(track: Track): PagedData<Shelf> = PagedData.Single {
         // Return related content if available
         emptyList()
     }
 
     // Helper functions
-    private fun parsePopularAnimeJson(jsonData: String): ParsedResult {
+    private fun parsePopularAnimeJson(jsonData: String): List<Shelf> {
         val jObject = json.decodeFromString<JsonObject>(jsonData)
 
         val tracks = jObject["data"]?.jsonArray?.mapNotNull { item ->
@@ -148,79 +142,100 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val thumbnail = item.jsonObject["thumbnail"]?.jsonPrimitive?.content
 
-            val track = Track(
+            Track(
                 id = id,
                 title = title,
-                album = Album(id = id, title = title, cover = thumbnail?.let { ImageHolder(it.toRequest()) }),
+                album = Album(id = id, title = title),
                 artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                duration = 0L,
-                cover = thumbnail?.let { ImageHolder(it.toRequest()) }
-            )
-            
-            // Add server information
-            track.copy(servers = listOf(Streamable.Track(track, "Default")))
+                duration = 0L
+            ).apply {
+                if (thumbnail != null) {
+                    cover = thumbnail.toRequest().toImageHolder()
+                }
+            }
         } ?: emptyList()
 
-        val shelves = tracks.map { track ->
-            Shelf.Item(
-                id = track.id,
+        return tracks.map { track ->
+            Shelf(
                 title = track.title,
-                subtitle = "Drama",
-                cover = track.cover,
-                media = track.toMediaItem()
+                items = listOf(
+                    Shelf.Item(
+                        title = track.title,
+                        subtitle = "Drama",
+                        cover = track.cover,
+                        media = track.toMediaItem()
+                    )
+                )
             )
         }
-
-        return ParsedResult(shelves, false)
     }
 
-    private fun parseSearchAnimeJson(jsonData: String): ParsedResult {
+    private fun parseSearchAnimeJson(jsonData: String): List<Shelf> {
         val tracks = json.decodeFromString<JsonArray>(jsonData).mapNotNull { item ->
             val title = item.jsonObject["title"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val thumbnail = item.jsonObject["thumbnail"]?.jsonPrimitive?.content
 
-            val track = Track(
+            Track(
                 id = id,
                 title = title,
-                album = Album(id = id, title = title, cover = thumbnail?.let { ImageHolder(it.toRequest()) }),
+                album = Album(id = id, title = title),
                 artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                duration = 0L,
-                cover = thumbnail?.let { ImageHolder(it.toRequest()) }
-            )
-            
-            // Add server information
-            track.copy(servers = listOf(Streamable.Track(track, "Default")))
+                duration = 0L
+            ).apply {
+                if (thumbnail != null) {
+                    cover = thumbnail.toRequest().toImageHolder()
+                }
+            }
         }
 
-        val shelves = tracks.map { track ->
-            Shelf.Item(
-                id = track.id,
+        return tracks.map { track ->
+            Shelf(
                 title = track.title,
-                subtitle = "Drama",
-                cover = track.cover,
-                media = track.toMediaItem()
+                items = listOf(
+                    Shelf.Item(
+                        title = track.title,
+                        subtitle = "Drama",
+                        cover = track.cover,
+                        media = track.toMediaItem()
+                    )
+                )
             )
         }
-
-        return ParsedResult(shelves, false)
     }
 
     private suspend fun parseTrackDetails(jsonData: String, originalTrack: Track): Track {
         val jObject = json.decodeFromString<JsonObject>(jsonData)
         
-        val updatedTrack = originalTrack.copy(
+        return originalTrack.copy(
             title = jObject["title"]?.jsonPrimitive?.content ?: originalTrack.title,
             album = Album(
                 id = originalTrack.id,
-                title = jObject["title"]?.jsonPrimitive?.content ?: originalTrack.title,
-                cover = jObject["thumbnail"]?.jsonPrimitive?.content?.let { ImageHolder(it.toRequest()) } ?: originalTrack.cover
-            ),
+                title = jObject["title"]?.jsonPrimitive?.content ?: originalTrack.title
+            ).apply {
+                val thumbnail = jObject["thumbnail"]?.jsonPrimitive?.content
+                if (thumbnail != null) {
+                    cover = thumbnail.toRequest().toImageHolder()
+                }
+            },
             description = jObject["description"]?.jsonPrimitive?.content
         )
+    }
+
+    private suspend fun videosFromElement(response: Response, id: String): Streamable.Media {
+        val jsonData = response.body?.string() ?: return Streamable.Media.Server(emptyList(), false)
+        val jObject = json.decodeFromString<JsonObject>(jsonData)
+        val videoUrl = jObject["Video"]?.jsonPrimitive?.content ?: return Streamable.Media.Server(emptyList(), false)
         
-        // Ensure servers are included
-        return updatedTrack.copy(servers = listOf(Streamable.Track(updatedTrack, "Default")))
+        val source = Streamable.Source.Http(
+            request = videoUrl.toRequest(),
+            headers = mapOf(
+                "referer" to "$baseUrl/",
+                "origin" to baseUrl
+            )
+        )
+        
+        return Streamable.Media.Server(listOf(source), false)
     }
 
     private suspend fun requestVideoKey(id: String): String {
@@ -246,11 +261,5 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         val id: String,
         val version: String,
         val key: String,
-    )
-
-    @Serializable
-    data class ParsedResult(
-        val shelves: List<Shelf>,
-        val hasNextPage: Boolean
     )
 }
