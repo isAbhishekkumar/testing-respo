@@ -37,13 +37,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
 
     // Home Feed Client Implementation
     override fun getHomeFeed(tab: Tab?): Feed {
-        val page = tab?.id?.toIntOrNull() ?: 1
-        val url = "$baseUrl/api/DramaList/List?page=$page&type=0&sub=0&country=0&status=0&order=1&pageSize=40"
-        val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).execute()
-        val jsonData = response.body?.string() ?: return Feed(emptyList())
-        
-        val shelves = parsePopularAnimeJson(jsonData)
+        val shelves = parsePopularAnimeJsonData(tab)
         return Feed(shelves)
     }
 
@@ -56,14 +50,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
 
     // Search Feed Client Implementation
     override fun searchFeed(query: String, tab: Tab?): Feed {
-        if (query.isBlank()) return Feed(emptyList())
-        
-        val url = "$baseUrl/api/DramaList/Search?q=$query&type=0"
-        val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).execute()
-        val jsonData = response.body?.string() ?: return Feed(emptyList())
-        
-        val shelves = parseSearchAnimeJson(jsonData)
+        val shelves = parseSearchAnimeJsonData(query, tab)
         return Feed(shelves)
     }
 
@@ -131,6 +118,27 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     // Helper functions
+    private fun parsePopularAnimeJsonData(tab: Tab?): List<Shelf> {
+        val page = tab?.id?.toIntOrNull() ?: 1
+        val url = "$baseUrl/api/DramaList/List?page=$page&type=0&sub=0&country=0&status=0&order=1&pageSize=40"
+        val request = Request.Builder().url(url).build()
+        val response = client.newCall(request).execute()
+        val jsonData = response.body?.string() ?: return emptyList()
+        
+        return parsePopularAnimeJson(jsonData)
+    }
+
+    private fun parseSearchAnimeJsonData(query: String, tab: Tab?): List<Shelf> {
+        if (query.isBlank()) return emptyList()
+        
+        val url = "$baseUrl/api/DramaList/Search?q=$query&type=0"
+        val request = Request.Builder().url(url).build()
+        val response = client.newCall(request).execute()
+        val jsonData = response.body?.string() ?: return emptyList()
+        
+        return parseSearchAnimeJson(jsonData)
+    }
+
     private fun parsePopularAnimeJson(jsonData: String): List<Shelf> {
         val jObject = json.decodeFromString<JsonObject>(jsonData)
 
