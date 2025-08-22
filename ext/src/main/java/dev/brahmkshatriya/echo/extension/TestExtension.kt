@@ -5,9 +5,6 @@ import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.*
 import dev.brahmkshatriya.echo.common.settings.Setting
 import dev.brahmkshatriya.echo.common.settings.Settings
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
@@ -155,19 +152,14 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             }
         } ?: emptyList()
 
-        return tracks.map { track ->
-            Shelf(
-                title = track.title,
-                items = listOf(
-                    Shelf.Item(
-                        title = track.title,
-                        subtitle = "Drama",
-                        cover = track.cover,
-                        media = track.toMediaItem()
-                    )
-                )
+        return listOf(
+            Shelf.Lists.Items(
+                title = "Popular Dramas",
+                list = tracks.map { track ->
+                    EchoMediaItem.TrackItem(track)
+                }
             )
-        }
+        )
     }
 
     private fun parseSearchAnimeJson(jsonData: String): List<Shelf> {
@@ -189,19 +181,14 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             }
         }
 
-        return tracks.map { track ->
-            Shelf(
-                title = track.title,
-                items = listOf(
-                    Shelf.Item(
-                        title = track.title,
-                        subtitle = "Drama",
-                        cover = track.cover,
-                        media = track.toMediaItem()
-                    )
-                )
+        return listOf(
+            Shelf.Lists.Items(
+                title = "Search Results",
+                list = tracks.map { track ->
+                    EchoMediaItem.TrackItem(track)
+                }
             )
-        }
+        )
     }
 
     private suspend fun parseTrackDetails(jsonData: String, originalTrack: Track): Track {
