@@ -115,14 +115,12 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     override suspend fun loadStreamableMedia(streamable: Streamable, isDownload: Boolean): Streamable.Media {
-        if (streamable !is dev.brahmkshatriya.echo.common.models.Streamable.Track) return Streamable.Media.Server(emptyList(), false)
-        
-        val kkey = requestVideoKey(streamable.track.id)
-        val url = "$baseUrl/api/DramaList/Episode/${streamable.track.id}.png?err=false&ts=&time=&kkey=$kkey"
+        val kkey = requestVideoKey(streamable.id)
+        val url = "$baseUrl/api/DramaList/Episode/${streamable.id}.png?err=false&ts=&time=&kkey=$kkey"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
         
-        return videosFromElement(response, streamable.track.id)
+        return videosFromElement(response, streamable.id)
     }
 
     override fun getShelves(track: Track): PagedData<Shelf> = PagedData.Single {
@@ -134,12 +132,12 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     private fun parsePopularAnimeJson(jsonData: String): List<Shelf> {
         val jObject = json.decodeFromString<JsonObject>(jsonData)
 
-        val tracks = jObject["data"]?.jsonArray?.mapNotNull { item ->
+        val trackItems = jObject["data"]?.jsonArray?.mapNotNull { item ->
             val title = item.jsonObject["title"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val thumbnail = item.jsonObject["thumbnail"]?.jsonPrimitive?.content
 
-            val trackItem = Track(
+            Track(
                 id = id,
                 title = title,
                 album = Album(id = id, title = title),
@@ -152,7 +150,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         return listOf(
             Shelf.Lists.Items(
                 title = "Popular Dramas",
-                list = tracks.map { trackItem ->
+                list = trackItems.map { trackItem ->
                     EchoMediaItem.TrackItem(trackItem)
                 }
             )
@@ -160,12 +158,12 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     private fun parseSearchAnimeJson(jsonData: String): List<Shelf> {
-        val tracks = json.decodeFromString<JsonArray>(jsonData).mapNotNull { item ->
+        val trackItems = json.decodeFromString<JsonArray>(jsonData).mapNotNull { item ->
             val title = item.jsonObject["title"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val thumbnail = item.jsonObject["thumbnail"]?.jsonPrimitive?.content
 
-            val trackItem = Track(
+            Track(
                 id = id,
                 title = title,
                 album = Album(id = id, title = title),
@@ -178,7 +176,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         return listOf(
             Shelf.Lists.Items(
                 title = "Search Results",
-                list = tracks.map { trackItem ->
+                list = trackItems.map { trackItem ->
                     EchoMediaItem.TrackItem(trackItem)
                 }
             )
