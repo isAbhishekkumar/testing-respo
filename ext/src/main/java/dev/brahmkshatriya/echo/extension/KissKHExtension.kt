@@ -6,6 +6,7 @@ import dev.brahmkshatriya.echo.common.models.*
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Request.Companion.toRequest
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.settings.Setting
 import dev.brahmkshatriya.echo.common.settings.Settings
 import kotlinx.serialization.Serializable
@@ -36,10 +37,9 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     // Home Feed Client Implementation
-    override fun getHomeFeed(tab: Tab?): Feed {
-        val shelves = parsePopularAnimeJsonData(tab)
-        return Feed(shelves)
-    }
+    override fun getHomeFeed(tab: Tab?) = PagedData.Single {
+        parsePopularAnimeJsonData(tab)
+    }.toFeed()
 
     override suspend fun getHomeTabs(): List<Tab> {
         return listOf(
@@ -49,10 +49,9 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     // Search Feed Client Implementation
-    override fun searchFeed(query: String, tab: Tab?): Feed {
-        val shelves = parseSearchAnimeJsonData(query, tab)
-        return Feed(shelves)
-    }
+    override fun searchFeed(query: String, tab: Tab?) = if (query.isNotBlank()) PagedData.Single {
+        parseSearchAnimeJsonData(query, tab)
+    }.toFeed() else PagedData.Single<Shelf> { listOf() }.toFeed()
 
     override suspend fun searchTabs(query: String): List<Tab> {
         return listOf(

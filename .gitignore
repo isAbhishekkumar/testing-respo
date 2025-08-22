@@ -7,3 +7,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# YouTube extension reference folder (for development only)
+youtube-reference/
