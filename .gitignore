@@ -10,3 +10,6 @@ local.properties
 
 # YouTube extension reference folder (for development only)
 youtube-reference/
+
+# Spotify extension reference folder (for development only)
+spotify-reference/
