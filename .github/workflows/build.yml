@@ -1,57 +1,66 @@
-name: nightly
+name: Build Echo YouTube Extension APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: 17
-          cache: 'gradle'
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      - name: Cook Variables from gradle.properties
-        run : |
-          name=$(grep '^extName=' gradle.properties | cut -d'=' -f2)
-          echo "NAME=$name Extension" >> $GITHUB_ENV
-          id=$(grep '^extId=' gradle.properties | cut -d'=' -f2)
-          echo "TAG=$id" >> $GITHUB_ENV
-      - name: Make Environment
-        run: |
-          version=$( echo ${{ github.event.head_commit.id }} | cut -c1-7 )
-          echo "VERSION=v$version" >> $GITHUB_ENV
-          echo -e "## ${{ env.NAME }}\n${{ github.event.head_commit.message }}" > commit.txt
-          echo "APP_PATH=app/build/${{ env.TAG }}-$version.eapk" >> $GITHUB_ENV
-          echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > $GITHUB_WORKSPACE/signing-key.jks
-          chmod +x ./gradlew
-      - name: Build with Gradle
-        run: |
-          ./gradlew assembleDebug \
-          -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
-          -Pandroid.injected.signing.store.password=${{ secrets.PASSWORD }} \
-          -Pandroid.injected.signing.key.alias=ecoyoutube \
-          -Pandroid.injected.signing.key.password=${{ secrets.PASSWORD }}
-          
-          cp app/build/outputs/apk/debug/app-debug.apk ${{ env.APP_PATH }}
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          path: ${{ env.APP_PATH }}
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          make_latest: true
-          tag_name: ${{ env.VERSION }}
-          body_path: commit.txt
-          name: ${{ env.VERSION }}
-          files: ${{ env.APP_PATH }}
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Decode Keystore
+      env:
+        KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        PASSWORD: ${{ secrets.PASSWORD }}
+      run: |
+        echo "$KEYSTORE_B64" | base64 -d > ecoyoutubemusics.keystore
+        echo "Keystore decoded successfully"
+        ls -la ecoyoutubemusics.keystore
+
+    - name: Build Debug APK
+      env:
+        PASSWORD: ${{ secrets.PASSWORD }}
+      run: |
+        ./gradlew assembleDebug
+        echo "Debug APK built successfully"
+
+    - name: Build Release APK
+      env:
+        PASSWORD: ${{ secrets.PASSWORD }}
+      run: |
+        ./gradlew assembleRelease
+        echo "Release APK built successfully"
+
+    - name: Upload APKs
+      uses: actions/upload-artifact@v4
+      with:
+        name: apk-files
+        path: |
+          app/build/outputs/apk/debug/*.apk
+          app/build/outputs/apk/release/*.apk
+        retention-days: 30
+
+    - name: List build outputs
+      run: |
+        echo "=== APK Build Outputs ==="
+        find app/build/outputs/apk -name "*.apk" -type f
+        echo "=== Build Directory Structure ==="
+        ls -la app/build/outputs/
