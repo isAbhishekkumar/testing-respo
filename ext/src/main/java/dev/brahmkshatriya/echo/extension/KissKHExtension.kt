@@ -75,10 +75,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             
             val trackItem = Track(
                 id = id,
-                title = title,
-                artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                cover = thumbnail?.toImageHolder(),
-                album = Album(id = id, title = title)
+                title = title
             )
             
             QuickSearchItem.Media(trackItem.toMediaItem(), false)
@@ -146,10 +143,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
 
             Track(
                 id = id,
-                title = title,
-                artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                cover = thumbnail?.toImageHolder(),
-                album = Album(id = id, title = title)
+                title = title
             )
         } ?: emptyList()
 
@@ -171,10 +165,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
 
             Track(
                 id = id,
-                title = title,
-                artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
-                cover = thumbnail?.toImageHolder(),
-                album = Album(id = id, title = title)
+                title = title
             )
         }
 
