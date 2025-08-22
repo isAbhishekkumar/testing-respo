@@ -27,8 +27,8 @@ import kotlin.system.measureTimeMillis
 @OptIn(DelicateCoroutinesApi::class)
 @ExperimentalCoroutinesApi
 class ExtensionUnitTest {
-    private val extension: ExtensionClient = TestExtension()
-    private val searchQuery = "Skrillex"
+    private val extension: ExtensionClient = KissKHExtension()
+    private val searchQuery = "drama"
     private val user = User("","Test User")
 
     // Test Setup
@@ -156,18 +156,6 @@ class ExtensionUnitTest {
             val stream = extension.loadStreamableMedia(streamable, false)
             println(stream)
         }.also { println("time : $it") }
-    }
-
-    @Test
-    fun testTrackRadio() = testIn("Testing Track Radio") {
-        if (extension !is TrackClient) error("TrackClient is not implemented")
-        if (extension !is RadioClient) error("RadioClient is not implemented")
-        val track = extension.loadTrack(searchTrack())
-        val radio = extension.radio(track, null)
-        val radioTracks = extension.loadTracks(radio).loadFirst()
-        radioTracks.forEach {
-            println(it)
-        }
     }
 
     @Test
