@@ -102,12 +102,31 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     override suspend fun loadStreamableMedia(streamable: Streamable, isDownload: Boolean): Streamable.Media {
-        val kkey = requestVideoKey(streamable.id)
-        val url = "$baseUrl/api/DramaList/Episode/${streamable.id}.png?err=false&ts=&time=&kkey=$kkey"
-        val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).execute()
-        
-        return videosFromElement(response, streamable.id)
+        try {
+            // First, try to get the video key
+            val kkey = requestVideoKey(streamable.id)
+            if (kkey.isBlank()) {
+                throw Exception("Failed to get video key for streamable: ${streamable.id}")
+            }
+            
+            // Try different API endpoints to get the video URL
+            val videoUrl = getVideoUrl(streamable.id, kkey)
+            if (videoUrl.isBlank()) {
+                throw Exception("Failed to get video URL for streamable: ${streamable.id}")
+            }
+            
+            // Create a direct HTTP source
+            val source = Streamable.Source.Http(
+                request = videoUrl.toRequest()
+            )
+            
+            return Streamable.Media.Server(listOf(source), false)
+            
+        } catch (e: Exception) {
+            // Log the error and return a fallback or throw
+            println("Error loading streamable media: ${e.message}")
+            throw Exception("Failed to load streamable media: ${e.message}")
+        }
     }
 
     override fun getShelves(track: Track): PagedData<Shelf> = PagedData.Single {
@@ -203,34 +222,63 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         )
     }
 
-    private suspend fun videosFromElement(response: Response, id: String): Streamable.Media {
-        val jsonData = response.body?.string() ?: return Streamable.Media.Server(emptyList(), false)
-        val jObject = json.decodeFromString<JsonObject>(jsonData)
-        val videoUrl = jObject["Video"]?.jsonPrimitive?.content ?: return Streamable.Media.Server(emptyList(), false)
-        
-        val source = Streamable.Source.Http(
-            request = videoUrl.toRequest()
-        )
-        
-        return Streamable.Media.Server(listOf(source), false)
+    private suspend fun getVideoUrl(episodeId: String, kkey: String): String {
+        return try {
+            // Try multiple endpoints to get the video URL
+            val endpoints = listOf(
+                "$baseUrl/api/DramaList/Episode/$episodeId.png?err=false&ts=&time=&kkey=$kkey",
+                "$baseUrl/api/DramaList/Episode/$episodeId?err=false&ts=&time=&kkey=$kkey",
+                "$baseUrl/api/DramaList/Episode/$episodeId.mp4?err=false&ts=&time=&kkey=$kkey"
+            )
+            
+            for (endpoint in endpoints) {
+                try {
+                    val request = Request.Builder().url(endpoint).build()
+                    val response = client.newCall(request).execute()
+                    val jsonData = response.body?.string() ?: continue
+                    
+                    val jObject = json.decodeFromString<JsonObject>(jsonData)
+                    val videoUrl = jObject["Video"]?.jsonPrimitive?.content ?: 
+                                  jObject["videoUrl"]?.jsonPrimitive?.content ?: 
+                                  jObject["url"]?.jsonPrimitive?.content
+                    
+                    if (!videoUrl.isNullOrBlank()) {
+                        return videoUrl
+                    }
+                } catch (e: Exception) {
+                    println("Failed to get video URL from endpoint $endpoint: ${e.message}")
+                    continue
+                }
+            }
+            
+            throw Exception("All video URL endpoints failed")
+            
+        } catch (e: Exception) {
+            println("Error getting video URL: ${e.message}")
+            throw e
+        }
     }
 
     private suspend fun requestVideoKey(id: String): String {
-        val url = "https://kisskh.ovh/api/key/$id&version=2.8.10"
-        val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).execute()
-        val keyResponse = response.body?.string() ?: ""
-        val keyObject = json.decodeFromString<JsonObject>(keyResponse)
-        return keyObject["key"]?.jsonPrimitive?.content ?: ""
-    }
-
-    private suspend fun requestSubKey(id: String): String {
-        val url = "https://kisskh.ovh/api/subkey/$id&version=2.8.10"
-        val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).execute()
-        val keyResponse = response.body?.string() ?: ""
-        val keyObject = json.decodeFromString<JsonObject>(keyResponse)
-        return keyObject["key"]?.jsonPrimitive?.content ?: ""
+        return try {
+            val url = "https://kisskh.ovh/api/key/$id&version=2.8.10"
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to get video key: HTTP ${response.code}")
+            }
+            
+            val keyResponse = response.body?.string() ?: throw Exception("Empty response for video key")
+            val keyObject = json.decodeFromString<JsonObject>(keyResponse)
+            val key = keyObject["key"]?.jsonPrimitive?.content ?: throw Exception("Key not found in response")
+            
+            return key
+            
+        } catch (e: Exception) {
+            println("Error requesting video key: ${e.message}")
+            throw Exception("Failed to get video key: ${e.message}")
+        }
     }
 
     @Serializable
