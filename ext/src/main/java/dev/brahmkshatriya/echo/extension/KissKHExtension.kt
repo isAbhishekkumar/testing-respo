@@ -36,14 +36,15 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     // Home Feed Client Implementation
-    override fun getHomeFeed(tab: Tab?): PagedData<Shelf> = PagedData.Single {
+    override fun getHomeFeed(tab: Tab?): Feed {
         val page = tab?.id?.toIntOrNull() ?: 1
         val url = "$baseUrl/api/DramaList/List?page=$page&type=0&sub=0&country=0&status=0&order=1&pageSize=40"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
-        val jsonData = response.body?.string() ?: return@Single emptyList()
+        val jsonData = response.body?.string() ?: return Feed(emptyList())
         
-        parsePopularAnimeJson(jsonData)
+        val shelves = parsePopularAnimeJson(jsonData)
+        return Feed(shelves)
     }
 
     override suspend fun getHomeTabs(): List<Tab> {
@@ -54,15 +55,16 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     // Search Feed Client Implementation
-    override fun searchFeed(query: String, tab: Tab?): PagedData<Shelf> = PagedData.Single {
-        if (query.isBlank()) return@Single emptyList()
+    override fun searchFeed(query: String, tab: Tab?): Feed {
+        if (query.isBlank()) return Feed(emptyList())
         
         val url = "$baseUrl/api/DramaList/Search?q=$query&type=0"
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()
-        val jsonData = response.body?.string() ?: return@Single emptyList()
+        val jsonData = response.body?.string() ?: return Feed(emptyList())
         
-        parseSearchAnimeJson(jsonData)
+        val shelves = parseSearchAnimeJson(jsonData)
+        return Feed(shelves)
     }
 
     override suspend fun searchTabs(query: String): List<Tab> {
