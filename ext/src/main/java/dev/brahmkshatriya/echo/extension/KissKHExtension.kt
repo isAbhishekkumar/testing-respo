@@ -102,41 +102,93 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     override suspend fun loadStreamableMedia(streamable: Streamable, isDownload: Boolean): Streamable.Media {
-        try {
+        println("=== loadStreamableMedia called ===")
+        println("Streamable ID: ${streamable.id}")
+        println("Streamable Type: ${streamable.type}")
+        
+        return try {
             // First, try to get the video key
+            println("Step 1: Getting video key...")
             val kkey = requestVideoKey(streamable.id)
             if (kkey.isBlank()) {
-                throw Exception("Failed to get video key for streamable: ${streamable.id}")
+                val error = "Failed to get video key for streamable: ${streamable.id}"
+                println("ERROR: $error")
+                throw Exception(error)
             }
+            println("✓ Video key obtained successfully")
             
             // Try different API endpoints to get the video URL
+            println("Step 2: Getting video URL...")
             val videoUrl = getVideoUrl(streamable.id, kkey)
             if (videoUrl.isBlank()) {
-                throw Exception("Failed to get video URL for streamable: ${streamable.id}")
+                val error = "Failed to get video URL for streamable: ${streamable.id}"
+                println("ERROR: $error")
+                throw Exception(error)
             }
+            println("✓ Video URL obtained: $videoUrl")
             
             // Check if the URL is an M3U8 playlist or direct video
+            println("Step 3: Determining media type...")
             return if (isM3u8Url(videoUrl)) {
                 // Handle M3U8 playlist
                 println("Detected M3U8 URL: $videoUrl")
+                println("Step 4: Parsing M3U8 playlist...")
                 val m3u8Sources = parseM3u8Playlist(videoUrl)
+                
                 if (m3u8Sources.isEmpty()) {
-                    throw Exception("Failed to parse M3U8 playlist or no streams found")
+                    val error = "Failed to parse M3U8 playlist or no streams found"
+                    println("ERROR: $error")
+                    throw Exception(error)
                 }
-                Streamable.Media.Server(m3u8Sources, false)
+                
+                println("✓ M3U8 playlist parsed successfully with ${m3u8Sources.size} sources")
+                
+                // Validate all sources before creating media
+                val validSources = m3u8Sources.filter { source ->
+                    val isValid = source.request.url.toString().isNotBlank()
+                    if (!isValid) {
+                        println("WARNING: Invalid source found with blank URL")
+                    }
+                    isValid
+                }
+                
+                if (validSources.isEmpty()) {
+                    val error = "No valid M3U8 sources found after validation"
+                    println("ERROR: $error")
+                    throw Exception(error)
+                }
+                
+                println("✓ Created media server with ${validSources.size} valid sources")
+                Streamable.Media.Server(validSources, false)
+                
             } else {
                 // Handle direct video URL
                 println("Detected direct video URL: $videoUrl")
-                val source = Streamable.Source.Http(
-                    request = videoUrl.toRequest()
-                )
-                Streamable.Media.Server(listOf(source), false)
+                
+                // Create HTTP source with validation
+                val httpRequest = videoUrl.toRequest()
+                if (httpRequest.url.toString().isBlank()) {
+                    val error = "Failed to create valid HTTP request for URL: $videoUrl"
+                    println("ERROR: $error")
+                    throw Exception(error)
+                }
+                
+                val source = Streamable.Source.Http(request = httpRequest)
+                println("✓ Created HTTP source successfully")
+                
+                val sources = listOf(source)
+                println("✓ Created media server with 1 source")
+                Streamable.Media.Server(sources, false)
             }
             
         } catch (e: Exception) {
-            // Log the error and return a fallback or throw
-            println("Error loading streamable media: ${e.message}")
-            throw Exception("Failed to load streamable media: ${e.message}")
+            val errorMessage = "Error in loadStreamableMedia: ${e.message}"
+            println("=== ERROR ===")
+            println(errorMessage)
+            e.printStackTrace()
+            
+            // Never return null - always throw a meaningful exception
+            throw Exception(errorMessage)
         }
     }
 
@@ -234,6 +286,8 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     private suspend fun getVideoUrl(episodeId: String, kkey: String): String {
+        println("getVideoUrl called with episodeId: $episodeId")
+        
         return try {
             // Try multiple endpoints to get the video URL
             val endpoints = listOf(
@@ -243,11 +297,22 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                 "$baseUrl/api/DramaList/Episode/$episodeId.m3u8?err=false&ts=&time=&kkey=$kkey"
             )
             
-            for (endpoint in endpoints) {
+            for ((index, endpoint) in endpoints.withIndex()) {
                 try {
+                    println("Trying endpoint $index: $endpoint")
                     val request = Request.Builder().url(endpoint).build()
                     val response = client.newCall(request).execute()
-                    val jsonData = response.body?.string() ?: continue
+                    
+                    if (!response.isSuccessful) {
+                        println("Endpoint $index failed with HTTP ${response.code}")
+                        continue
+                    }
+                    
+                    val jsonData = response.body?.string()
+                    if (jsonData.isNullOrBlank()) {
+                        println("Endpoint $index returned empty response")
+                        continue
+                    }
                     
                     val jObject = json.decodeFromString<JsonObject>(jsonData)
                     val videoUrl = jObject["Video"]?.jsonPrimitive?.content ?: 
@@ -255,16 +320,18 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                                   jObject["url"]?.jsonPrimitive?.content
                     
                     if (!videoUrl.isNullOrBlank()) {
-                        println("Found video URL from endpoint $endpoint: $videoUrl")
+                        println("✓ Found video URL from endpoint $index: $videoUrl")
                         return videoUrl
+                    } else {
+                        println("Endpoint $index returned no video URL. Response: $jsonData")
                     }
                 } catch (e: Exception) {
-                    println("Failed to get video URL from endpoint $endpoint: ${e.message}")
+                    println("Failed to get video URL from endpoint $index: ${e.message}")
                     continue
                 }
             }
             
-            throw Exception("All video URL endpoints failed")
+            throw Exception("All video URL endpoints failed for episode: $episodeId")
             
         } catch (e: Exception) {
             println("Error getting video URL: ${e.message}")
@@ -273,6 +340,8 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     private suspend fun requestVideoKey(id: String): String {
+        println("requestVideoKey called with id: $id")
+        
         return try {
             val url = "https://kisskh.ovh/api/key/$id&version=2.8.10"
             val request = Request.Builder().url(url).build()
@@ -283,10 +352,12 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             }
             
             val keyResponse = response.body?.string() ?: throw Exception("Empty response for video key")
+            println("Key response: $keyResponse")
+            
             val keyObject = json.decodeFromString<JsonObject>(keyResponse)
             val key = keyObject["key"]?.jsonPrimitive?.content ?: throw Exception("Key not found in response")
             
-            println("Successfully retrieved video key for ID: $id")
+            println("✓ Successfully retrieved video key for ID: $id")
             return key
             
         } catch (e: Exception) {
@@ -305,8 +376,9 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     private suspend fun parseM3u8Playlist(m3u8Url: String): List<Streamable.Source.Http> {
+        println("parseM3u8Playlist called with URL: $m3u8Url")
+        
         return try {
-            println("Parsing M3U8 playlist: $m3u8Url")
             val request = Request.Builder().url(m3u8Url).build()
             val response = client.newCall(request).execute()
             
@@ -315,6 +387,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             }
             
             val playlistContent = response.body?.string() ?: throw Exception("Empty M3U8 playlist response")
+            println("M3U8 playlist content length: ${playlistContent.length}")
             
             // Parse M3U8 content
             val sources = mutableListOf<Streamable.Source.Http>()
@@ -332,6 +405,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                         // Parse stream info
                         currentBandwidth = extractBandwidth(trimmedLine)
                         currentResolution = extractResolution(trimmedLine)
+                        println("Stream info - Bandwidth: $currentBandwidth, Resolution: $currentResolution")
                     }
                     trimmedLine.startsWith("#EXT-X-") -> {
                         // Other M3U8 tags, ignore for now
@@ -347,12 +421,16 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                                 resolveRelativeUrl(m3u8Url, currentUrl)
                             }
                             
-                            val source = Streamable.Source.Http(
-                                request = absoluteUrl.toRequest()
-                            )
-                            sources.add(source)
-                            
-                            println("Added M3U8 stream: $absoluteUrl (Bandwidth: $currentBandwidth, Resolution: $currentResolution)")
+                            // Validate the URL
+                            if (absoluteUrl.isNotBlank()) {
+                                val httpRequest = absoluteUrl.toRequest()
+                                val source = Streamable.Source.Http(request = httpRequest)
+                                sources.add(source)
+                                
+                                println("Added M3U8 stream: $absoluteUrl (Bandwidth: $currentBandwidth, Resolution: $currentResolution)")
+                            } else {
+                                println("WARNING: Skipped invalid URL: $absoluteUrl")
+                            }
                         }
                         // Reset for next stream
                         currentBandwidth = 0
@@ -363,18 +441,21 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             }
             
             if (sources.isEmpty()) {
+                println("No streams parsed from M3U8, using original URL as fallback")
                 // If no streams were parsed, try to use the original M3U8 URL directly
-                println("No streams parsed from M3U8, using original URL")
-                sources.add(Streamable.Source.Http(request = m3u8Url.toRequest()))
+                val fallbackSource = Streamable.Source.Http(request = m3u8Url.toRequest())
+                sources.add(fallbackSource)
             }
             
-            println("Parsed ${sources.size} streams from M3U8 playlist")
+            println("✓ Parsed ${sources.size} streams from M3U8 playlist")
             sources
             
         } catch (e: Exception) {
             println("Error parsing M3U8 playlist: ${e.message}")
+            e.printStackTrace()
             // Fallback: return the original M3U8 URL as a single source
-            listOf(Streamable.Source.Http(request = m3u8Url.toRequest()))
+            val fallbackSource = Streamable.Source.Http(request = m3u8Url.toRequest())
+            listOf(fallbackSource)
         }
     }
 
