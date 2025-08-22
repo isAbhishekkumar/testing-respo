@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.clients.*
+import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.*
 import dev.brahmkshatriya.echo.common.settings.Setting
 import dev.brahmkshatriya.echo.common.settings.Settings
@@ -35,14 +36,14 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     // Home Feed Client Implementation
-    override suspend fun getHomeFeed(tab: Tab?): PagingData<Shelf> {
+    override fun getHomeFeed(tab: Tab?): PagedData<Shelf> = PagedData.Single {
         val page = tab?.id?.toIntOrNull() ?: 1
         val url = "$baseUrl/api/DramaList/List?page=$page&type=0&sub=0&country=0&status=0&order=1&pageSize=40"
         val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).await()
-        val jsonData = response.body?.string() ?: return PagingData(emptyList(), false)
+        val response = client.newCall(request).execute()
+        val jsonData = response.body?.string() ?: return@Single emptyList()
         
-        return parsePopularAnimeJson(jsonData)
+        parsePopularAnimeJson(jsonData).shelves
     }
 
     override suspend fun getHomeTabs(): List<Tab> {
@@ -53,15 +54,15 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     // Search Feed Client Implementation
-    override suspend fun searchFeed(query: String, tab: Tab?): PagingData<Shelf> {
-        if (query.isBlank()) return PagingData(emptyList(), false)
+    override fun searchFeed(query: String, tab: Tab?): PagedData<Shelf> = PagedData.Single {
+        if (query.isBlank()) return@Single emptyList()
         
         val url = "$baseUrl/api/DramaList/Search?q=$query&type=0"
         val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).await()
-        val jsonData = response.body?.string() ?: return PagingData(emptyList(), false)
+        val response = client.newCall(request).execute()
+        val jsonData = response.body?.string() ?: return@Single emptyList()
         
-        return parseSearchAnimeJson(jsonData)
+        parseSearchAnimeJson(jsonData).shelves
     }
 
     override suspend fun searchTabs(query: String): List<Tab> {
@@ -72,12 +73,12 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         )
     }
 
-    override suspend fun quickSearch(query: String): List<QuickSearch> {
+    override suspend fun quickSearch(query: String): List<QuickSearchItem> {
         if (query.isBlank()) return emptyList()
         
         val url = "$baseUrl/api/DramaList/Search?q=$query&type=0"
         val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).await()
+        val response = client.newCall(request).execute()
         val jsonData = response.body?.string() ?: return emptyList()
         
         return json.decodeFromString<JsonArray>(jsonData).mapNotNull { item ->
@@ -85,13 +86,16 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val thumbnail = item.jsonObject["thumbnail"]?.jsonPrimitive?.content
             
-            QuickSearch(
+            val track = Track(
                 id = id,
                 title = title,
-                subtitle = "Drama",
-                coverUrl = thumbnail,
-                type = "track"
+                album = Album(id = id, title = title, cover = thumbnail?.let { ImageHolder(it.toRequest()) }),
+                artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
+                duration = 0L,
+                cover = thumbnail?.let { ImageHolder(it.toRequest()) }
             )
+            
+            QuickSearchItem.Media(track.toMediaItem(), false)
         }
     }
 
@@ -99,31 +103,30 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     override suspend fun loadTrack(track: Track): Track {
         val url = "$baseUrl/api/DramaList/Drama/${track.id}?isq=false"
         val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).await()
+        val response = client.newCall(request).execute()
         val jsonData = response.body?.string() ?: return track
         
         return parseTrackDetails(jsonData, track)
     }
 
-    override suspend fun loadStreamableMedia(streamable: Streamable, quality: Boolean): StreamableMedia {
-        if (streamable !is Streamable.Track) return StreamableMedia("", "")
+    override suspend fun loadStreamableMedia(streamable: Streamable, isDownload: Boolean): Streamable.Media {
+        if (streamable !is Streamable.Track) return Streamable.Media.Server("", "")
         
         val kkey = requestVideoKey(streamable.track.id)
         val url = "$baseUrl/api/DramaList/Episode/${streamable.track.id}.png?err=false&ts=&time=&kkey=$kkey"
         val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).await()
+        val response = client.newCall(request).execute()
         
         return videosFromElement(response, streamable.track.id)
     }
 
-    private suspend fun videosFromElement(response: Response, id: String): StreamableMedia {
-        val jsonData = response.body?.string() ?: return StreamableMedia("", "")
+    private suspend fun videosFromElement(response: Response, id: String): Streamable.Media {
+        val jsonData = response.body?.string() ?: return Streamable.Media.Server("", "")
         val jObject = json.decodeFromString<JsonObject>(jsonData)
-        val videoUrl = jObject["Video"]?.jsonPrimitive?.content ?: return StreamableMedia("", "")
+        val videoUrl = jObject["Video"]?.jsonPrimitive?.content ?: return Streamable.Media.Server("", "")
         
-        return StreamableMedia(
-            url = videoUrl,
-            mimeType = "video/mp4",
+        return Streamable.Media.Server(
+            url = videoUrl.toRequest(),
             headers = mapOf(
                 "referer" to "$baseUrl/",
                 "origin" to baseUrl
@@ -131,21 +134,14 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         )
     }
 
-    override suspend fun getShelves(track: Track): PagingData<Shelf> {
+    override fun getShelves(track: Track): PagedData<Shelf> = PagedData.Single {
         // Return related content if available
-        return PagingData(emptyList(), false)
+        emptyList()
     }
 
     // Helper functions
-    private suspend fun parsePopularAnimeJson(jsonData: String): PagingData<Shelf> {
+    private fun parsePopularAnimeJson(jsonData: String): ParsedResult {
         val jObject = json.decodeFromString<JsonObject>(jsonData)
-        val lastPage = jObject["totalCount"]?.jsonPrimitive?.int
-        val page = jObject["page"]?.jsonPrimitive?.int
-        val hasNextPage = if (lastPage != null && page != null) {
-            page < lastPage
-        } else {
-            false
-        }
 
         val tracks = jObject["data"]?.jsonArray?.mapNotNull { item ->
             val title = item.jsonObject["title"]?.jsonPrimitive?.content ?: return@mapNotNull null
@@ -155,10 +151,10 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             val track = Track(
                 id = id,
                 title = title,
-                album = Album(id = id, title = title, coverUrl = thumbnail),
+                album = Album(id = id, title = title, cover = thumbnail?.let { ImageHolder(it.toRequest()) }),
                 artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
                 duration = 0L,
-                coverUrl = thumbnail
+                cover = thumbnail?.let { ImageHolder(it.toRequest()) }
             )
             
             // Add server information
@@ -170,15 +166,15 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                 id = track.id,
                 title = track.title,
                 subtitle = "Drama",
-                coverUrl = track.coverUrl,
-                media = EchoMediaItem.TrackItem(track)
+                cover = track.cover,
+                media = track.toMediaItem()
             )
         }
 
-        return PagingData(shelves, hasNextPage)
+        return ParsedResult(shelves, false)
     }
 
-    private suspend fun parseSearchAnimeJson(jsonData: String): PagingData<Shelf> {
+    private fun parseSearchAnimeJson(jsonData: String): ParsedResult {
         val tracks = json.decodeFromString<JsonArray>(jsonData).mapNotNull { item ->
             val title = item.jsonObject["title"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
@@ -187,10 +183,10 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             val track = Track(
                 id = id,
                 title = title,
-                album = Album(id = id, title = title, coverUrl = thumbnail),
+                album = Album(id = id, title = title, cover = thumbnail?.let { ImageHolder(it.toRequest()) }),
                 artists = listOf(Artist(id = "unknown", name = "Unknown Artist")),
                 duration = 0L,
-                coverUrl = thumbnail
+                cover = thumbnail?.let { ImageHolder(it.toRequest()) }
             )
             
             // Add server information
@@ -202,12 +198,12 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                 id = track.id,
                 title = track.title,
                 subtitle = "Drama",
-                coverUrl = track.coverUrl,
-                media = EchoMediaItem.TrackItem(track)
+                cover = track.cover,
+                media = track.toMediaItem()
             )
         }
 
-        return PagingData(shelves, false)
+        return ParsedResult(shelves, false)
     }
 
     private suspend fun parseTrackDetails(jsonData: String, originalTrack: Track): Track {
@@ -218,7 +214,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             album = Album(
                 id = originalTrack.id,
                 title = jObject["title"]?.jsonPrimitive?.content ?: originalTrack.title,
-                coverUrl = jObject["thumbnail"]?.jsonPrimitive?.content ?: originalTrack.coverUrl
+                cover = jObject["thumbnail"]?.jsonPrimitive?.content?.let { ImageHolder(it.toRequest()) } ?: originalTrack.cover
             ),
             description = jObject["description"]?.jsonPrimitive?.content
         )
@@ -228,26 +224,18 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
     }
 
     private suspend fun requestVideoKey(id: String): String {
-        // Note: The original code uses BuildConfig.KISSKH_API which would be:
-        // val url = "${BuildConfig.KISSKH_API}$id&version=2.8.10"
-        // Since we don't have access to BuildConfig, we need to use the actual endpoint
-        // Based on common patterns, this is likely the correct endpoint
         val url = "https://kisskh.ovh/api/key/$id&version=2.8.10"
         val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).await()
+        val response = client.newCall(request).execute()
         val keyResponse = response.body?.string() ?: ""
         val keyObject = json.decodeFromString<JsonObject>(keyResponse)
         return keyObject["key"]?.jsonPrimitive?.content ?: ""
     }
 
     private suspend fun requestSubKey(id: String): String {
-        // Note: The original code uses BuildConfig.KISSKH_SUB_API which would be:
-        // val url = "${BuildConfig.KISSKH_SUB_API}$id&version=2.8.10"
-        // Since we don't have access to BuildConfig, we need to use the actual endpoint
-        // Based on common patterns, this is likely the correct endpoint
         val url = "https://kisskh.ovh/api/subkey/$id&version=2.8.10"
         val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).await()
+        val response = client.newCall(request).execute()
         val keyResponse = response.body?.string() ?: ""
         val keyObject = json.decodeFromString<JsonObject>(keyResponse)
         return keyObject["key"]?.jsonPrimitive?.content ?: ""
@@ -260,6 +248,9 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         val key: String,
     )
 
-    // Extension for Response.await()
-    private suspend fun Response.await(): Response = this
+    @Serializable
+    data class ParsedResult(
+        val shelves: List<Shelf>,
+        val hasNextPage: Boolean
+    )
 }
