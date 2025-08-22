@@ -3,6 +3,9 @@ package dev.brahmkshatriya.echo.extension
 import dev.brahmkshatriya.echo.common.clients.*
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.*
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
+import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
+import dev.brahmkshatriya.echo.common.models.Request.Companion.toRequest
 import dev.brahmkshatriya.echo.common.settings.Setting
 import dev.brahmkshatriya.echo.common.settings.Settings
 import kotlinx.serialization.Serializable
@@ -91,7 +94,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                 duration = 0L
             ).apply {
                 if (thumbnail != null) {
-                    cover = thumbnail.toRequest().toImageHolder()
+                    cover = thumbnail.toImageHolder()
                 }
             }
             
@@ -147,7 +150,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                 duration = 0L
             ).apply {
                 if (thumbnail != null) {
-                    cover = thumbnail.toRequest().toImageHolder()
+                    cover = thumbnail.toImageHolder()
                 }
             }
         } ?: emptyList()
@@ -176,7 +179,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
                 duration = 0L
             ).apply {
                 if (thumbnail != null) {
-                    cover = thumbnail.toRequest().toImageHolder()
+                    cover = thumbnail.toImageHolder()
                 }
             }
         }
@@ -202,7 +205,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
             ).apply {
                 val thumbnail = jObject["thumbnail"]?.jsonPrimitive?.content
                 if (thumbnail != null) {
-                    cover = thumbnail.toRequest().toImageHolder()
+                    cover = thumbnail.toImageHolder()
                 }
             },
             description = jObject["description"]?.jsonPrimitive?.content
@@ -215,11 +218,7 @@ class KissKHExtension : ExtensionClient, HomeFeedClient, SearchFeedClient, Track
         val videoUrl = jObject["Video"]?.jsonPrimitive?.content ?: return Streamable.Media.Server(emptyList(), false)
         
         val source = Streamable.Source.Http(
-            request = videoUrl.toRequest(),
-            headers = mapOf(
-                "referer" to "$baseUrl/",
-                "origin" to baseUrl
-            )
+            request = videoUrl.toRequest()
         )
         
         return Streamable.Media.Server(listOf(source), false)
